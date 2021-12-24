@@ -1,6 +1,6 @@
 # financedatabase
 
-A tool to collect stock price history from the internet, for personal use.
+A tool to collect stock price history from the internet, and incrementally store this locally
 
 This might be useful if you want to monitor the performance of your invesments.
 
