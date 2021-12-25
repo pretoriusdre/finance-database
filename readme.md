@@ -1,12 +1,12 @@
 # financedatabase
 
-A tool to collect stock price history from the internet, and incrementally store this locally
+A tool to collect stock price history from the internet, and incrementally store this into a local databse
 
-This might be useful if you want to monitor the performance of your invesments.
+This might be useful if you want to monitor the performance of your investments.
 
 Inputs (to run the script)
-* companies-held.csv		A file describing the current shares in your portfolion
-* finance-database.db		Optional, an SQLlite database oneo which to append the data
+* companies-held.csv		A file describing the current shares in your portfolio
+* finance-database.db		Optional, an SQLlite database onto which to append the data
    
 Returns:
 * finance-database.db		An updated database.
