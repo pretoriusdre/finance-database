@@ -1,4 +1,4 @@
-# financedatabase
+# finance-database
 
 A tool to collect stock price history from the internet, and incrementally store this into a local databse.
 

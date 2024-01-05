@@ -76,6 +76,22 @@ def get_last_recorded_date(engine, ticker_code):
     return last_recorded_date
 
 
+def delete_last_week_data(engine):
+    today = datetime.now()
+    one_week_ago = today - timedelta(days=7)
+
+    formatted_one_week_ago = one_week_ago.strftime('%Y-%m-%d')
+
+    delete_query = (
+        "DELETE FROM price_history "
+        "WHERE date >= '"
+        + formatted_one_week_ago
+        + "'"
+    )
+
+    with engine.connect() as connection:
+        connection.execute(delete_query)
+
 def commit_data(data, table, engine, mode):
     data.to_sql(table, con=engine, if_exists=mode)
     print('    - ' + str(len(data))
@@ -85,6 +101,7 @@ def commit_data(data, table, engine, mode):
 def export_data_to_csv(output_file, table, engine):
     # These output copies of the table to csv files, for use in PowerBI
     temp_df = pd.read_sql(table, con=engine)
+    print(f'Exporting {len(temp_df)} rows')
     temp_df.to_csv(output_file)
 
 
@@ -132,13 +149,25 @@ def main():
 
     engine = create_engine('sqlite:///' + file_finance_database, echo=False)
 
+
     companies_held = pd.read_csv(file_companies_held)
 
-    res = input('Type Y to download all company data\n')
-    if res.upper() == 'Y':
+    do_everything = False
+    
+    """
+    res = input('Type X to delete the last 1 week of data:\n')
+    if res.upper() == 'X':
+    delete_last_week_data(engine)
+    """
+
+    res = input('Type Y to download all company data and move to the next step\nType A to to just do everything:\n')
+    if res.upper() == 'A':
+        do_everything = True
+    if res.upper() == 'Y' or do_everything:
         (price_history, current_price_only) = download_data(companies_held['Code'], engine)
-        res = input('Type Y to commit the data to the local database\n')
-        if res.upper() == 'Y':
+        if not do_everything:
+            res = input('Type Y to commit the data to the local database\n')
+        if res.upper() == 'Y' or do_everything:
             commit_data(price_history, 'price_history', engine, 'append')
             commit_data(current_price_only, 'current_price_only', engine, 'replace')
 
@@ -152,22 +181,25 @@ def main():
             manual_add_missing_data(missing_data, 'price_history', engine)
         except:
             print('Something went wrong trying to load in the manual data.')
-
+    
+    # pandas to_sql method does not currently support upsert behaviour.
+    # If this changes in the future, perhaps this flag can be used, to eliminate the problem of duplicate records.
+    # For now though, it's easy enough to just delete the duplicates after insertion.
     print('duplicates are:')
     duplicates = get_duplicate_records(engine, 'price_history')
     print(duplicates)
-
-    res = input('Type Y to delete duplicate records\n')
-    if res.upper() == 'Y':
+    if not do_everything:
+        res = input('Type Y to delete duplicate records\n')
+    if res.upper() == 'Y' or do_everything:
         delete_duplicate_records(engine, 'price_history')
 
     print('duplicates are:')
     duplicates = get_duplicate_records(engine, 'price_history')
     print(duplicates)
-
-    res = input('Type Y to export CSV files for PowerBI\n')
-    if res.upper() == 'Y':
-        # These output copies of the database to csv files, for use in PowerBI
+    if not do_everything:
+        res = input('Type Y to export CSV files for PowerBI\n')
+    if res.upper() == 'Y' or do_everything:
+        # These output copies of the database to csv files, for use in PowerBI.
         export_data_to_csv(output_file=file_price_history_output,
                            table='price_history',
                            engine=engine)
