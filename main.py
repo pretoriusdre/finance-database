@@ -7,18 +7,138 @@ Created on Wed Apr 14 20:22:22 2021
 
 import yfinance as yf
 from sqlalchemy import create_engine
+import string
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import pandas as pd
+from sqlite_wrapper import SQLiteWrapper
+import shutil
+from pathlib import Path
 
 
-def download_data(companies_held, engine):
+
+class FinanceDatabaseWrapper(SQLiteWrapper):
+
+    ddl_creation_statements = [
+        """
+        CREATE TABLE IF NOT EXISTS price_history  (
+            [id]            TEXT PRIMARY KEY,
+            [ticker_code]   TEXT,
+            [date]          DATE,
+            [open]          FLOAT,
+            [high]          FLOAT,
+            [low]           FLOAT,
+            [close]         FLOAT,
+            [volume]        BIGINT,
+            [dividends]     BIGINT,
+            [stock_splits]  BIGINT
+        );"""
+        ,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_ticker_code_date
+        ON price_history ([ticker_code], [date]);
+        """
+        ,
+        """
+        CREATE TABLE IF NOT EXISTS price_current  (
+            [id]            TEXT PRIMARY KEY,
+            [ticker_code]   TEXT,
+            [date]          DATE,
+            [open]          FLOAT,
+            [high]          FLOAT,
+            [low]           FLOAT,
+            [close]         FLOAT,
+            [volume]        BIGINT,
+            [dividends]     BIGINT,
+            [stock_splits]  BIGINT
+        );
+        """
+        ,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_price_current_ticker_code_date
+        ON price_current ([ticker_code]);
+        """
+    ]
+
+
+    def __init__(self):
+
+
+        super().__init__(db_path=Path('finance-database.db'), create=True)
+
+        self.backup()
+
+        for statement in FinanceDatabaseWrapper.ddl_creation_statements:
+
+            self.execute(statement)
+
+
+    def backup(self):
+        
+        today_date = date.today()
+        last_backup_date = date.fromisoformat('2000-01-01')
+        
+        backup_path = Path('db_backups') 
+
+        for path in backup_path.glob('*.db'):
+            backup_date = date.fromisoformat(path.name[:10])
+            last_backup_date = max(last_backup_date, backup_date)
+
+
+        if (today_date - last_backup_date).days >= 7:
+            backup_file_path = backup_path / f'{today_date.isoformat()}.db'
+            shutil.copy(self.db_path, backup_file_path)
+        
+
+    def export_data_to_csv(self, table, output_file):
+        # These output copies of the table to csv files, for use in PowerBI
+        df = self.get_table(table)
+        print(f'Exporting {len(df)} rows')
+        df.to_csv(output_file, index=False)
+
+
+    def get_last_recorded_date(self, ticker_code):
+
+        # ticker_code = self._sanitise_input(ticker_code)
+        query = f"""
+        SELECT date FROM price_history
+        WHERE ticker_code = ?
+        ORDER BY date desc
+        """
+        records = self.execute(query,parameters=(ticker_code,), fetch=True)
+        last_recorded_date = records[0][0] # First record, first column
+
+        if type(last_recorded_date) is str:
+            last_recorded_date = last_recorded_date[:10]
+            return date.fromisoformat(last_recorded_date)
+        elif type(last_recorded_date) is datetime:
+            return last_recorded_date.date()
+        elif type(last_recorded_date) is date:
+            return last_recorded_date
+    
+        raise ValueError(f'Bad date encountered: {last_recorded_date}')
+
+
+    def delete_last_n_days(self, n):
+        delete_from = date.today() - timedelta(days=n)
+        delete_from_str = delete_from.isoformat()
+        delete_query = (
+            f"""
+            DELETE FROM price_history
+            WHERE date >= '{delete_from_str}'
+            """
+        )
+        self.execute(delete_query)
+
+
+
+def download_data(companies_held, db):
     # Expects companies_held to be series-like object containing strings
     # For example companies_held = ['VGS.AX', 'VAS.AX']
     
     # All historical data which is retrieved:
-    price_history = pd.DataFrame()
-    current_price_only = pd.DataFrame()
+    price_history_all = []
+    price_current_all = []
 
     codes_downloaded = 0
 
@@ -28,15 +148,13 @@ def download_data(companies_held, engine):
         
         # Get the starting date to retrieve from (last data)
         try:
-            last_recorded_date = get_last_recorded_date(engine, ticker_code)
+            last_recorded_date = db.get_last_recorded_date(ticker_code)
             next_date_to_dl = last_recorded_date + timedelta(days=1)
-            next_date_to_dl = next_date_to_dl.strftime('%Y-%m-%d')
-            print('    - Database was read ok. Next date to download is  '
-                  + next_date_to_dl)
+            next_date_to_dl = next_date_to_dl.isoformat()
+            print(f'    - Database was read ok. Next date to download is {next_date_to_dl}')
         except Exception as e:
             print(e)
-            print('    - Local database could not be read. '
-                  + 'Will try get all data')
+            print('    - Local database could not be read. Will try get all data')
             # No data? Then start getting data from 2000
             # I don't need data before this    
             next_date_to_dl = '2000-01-01'
@@ -48,9 +166,8 @@ def download_data(companies_held, engine):
             print('    - ' + str(len(price_history_temp))
                   + ' history days retrieved')
             if len(price_history_temp) > 0:
-                price_history = price_history.append(price_history_temp)
-                current_price_only = current_price_only.append(
-                    price_history.tail(1))
+                price_history_all.append(price_history_temp)
+                price_current_all.append(price_history_temp.tail(1))
                 codes_downloaded += 1
         except Exception as e:
             print(e)
@@ -58,83 +175,38 @@ def download_data(companies_held, engine):
 
         time.sleep(0.5)  # to not overload the API
 
-    print('Total of ' + str(len(price_history))
-          + ' history days retrieved across '
-          + str(codes_downloaded) + ' codes')
+    price_history = pd.concat(price_history_all)
+    price_current = pd.concat(price_current_all)
     
-    return price_history, current_price_only
+    # Change the 'Date' dataframe index to columns
+    price_history = price_history.reset_index()
+    price_current = price_current.reset_index()
 
+    price_history.columns = [to_snake_case(col) for col in price_history.columns]
+    price_current.columns = [to_snake_case(col) for col in price_current.columns]
+    
+    print(f'Total of {len(price_history)} history days retrieved across {codes_downloaded} codes')
+    
+    # <class 'pandas._libs.tslibs.timestamps.Timestamp'> causing problems
+    price_history['date'] = pd.to_datetime(price_history['date']).apply(lambda x: x.date().isoformat())
+    price_current['date'] = pd.to_datetime(price_current['date']).apply(lambda x: x.date().isoformat())
 
-def get_last_recorded_date(engine, ticker_code):
-    last_recorded_date = engine.execute(
-        "SELECT Date FROM price_history where ticker_code = '"
-        + ticker_code
-        + "'  order by date desc"
-    ).fetchone()[0]
-    last_recorded_date = datetime.strptime(
-        last_recorded_date[:10], '%Y-%m-%d')
-    return last_recorded_date
-
-
-def delete_last_week_data(engine):
-    today = datetime.now()
-    one_week_ago = today - timedelta(days=7)
-
-    formatted_one_week_ago = one_week_ago.strftime('%Y-%m-%d')
-
-    delete_query = (
-        "DELETE FROM price_history "
-        "WHERE date >= '"
-        + formatted_one_week_ago
-        + "'"
-    )
-
-    with engine.connect() as connection:
-        connection.execute(delete_query)
-
-def commit_data(data, table, engine, mode):
-    data.to_sql(table, con=engine, if_exists=mode)
-    print('    - ' + str(len(data))
-          + ' records saved to table ' + table)
-
-
-def export_data_to_csv(output_file, table, engine):
-    # These output copies of the table to csv files, for use in PowerBI
-    temp_df = pd.read_sql(table, con=engine)
-    print(f'Exporting {len(temp_df)} rows')
-    temp_df.to_csv(output_file)
-
-
-def get_duplicate_records(engine, table):
-    try:
-        duplicates = engine.execute("SELECT ticker_code, Date, COUNT(*) FROM "
-                                    + table
-                                    + " GROUP BY ticker_code,"
-                                    + " Date HAVING COUNT(*) > 1").fetchall()
-        return duplicates
-    except Exception as e:
-        print(e)
-        print('    - Local database could not be read. ')
-    return None
-
-
-def delete_duplicate_records(engine, table):
-    engine.execute("DELETE FROM " + table
-                   + " WHERE rowid NOT IN ("
-                   + " SELECT MIN(rowid) "
-                   + " FROM " + table
-                   + " GROUP BY "
-                   + " ticker_code, Date)"
-                   )
+    return price_history, price_current
 
 
 def manual_add_missing_data(data, table, engine):
     data.to_sql(table, con=engine, if_exists='append')
 
 
+def to_snake_case(text):
+    allowable_chars = string.ascii_letters + string.digits
+    snake_case = ''.join([char if char in allowable_chars else '_' for char in text]).lower()
+    return snake_case
+
 def main():
-    # Local sqlalchemy database
-    file_finance_database = 'finance-database.db'
+
+    db = FinanceDatabaseWrapper()
+
 
     # Must have a column called 'Code'
     # Code must contain strings with a ticker matching Yahoo Finance, such as 'VGS.AX'
@@ -144,69 +216,47 @@ def main():
     file_missing_data_delisted = 'input-missing-data-delisted.csv'
 
     # Data output for PowerBI. Historical timeseries and current price.
-    file_price_history_output = 'output-price-history.csv'
-    file_current_price_output = 'output-current-price.csv'
+    output_file_price_history = 'price-history.csv'
+    output_file_price_current = 'price-current.csv'
 
-    engine = create_engine('sqlite:///' + file_finance_database, echo=False)
-
-
+    
     companies_held = pd.read_csv(file_companies_held)
 
-    do_everything = False
     
-    """
-    res = input('Type X to delete the last 1 week of data:\n')
-    if res.upper() == 'X':
-    delete_last_week_data(engine)
-    """
+    # res = input('Type X to delete the last N days:\n')
+    # if res.upper() == 'X':
+    #     n = int(input('How many days?:\n'))
+    #     delete_last_n_days(engine, n)
 
-    res = input('Type Y to download all company data and move to the next step\nType A to to just do everything:\n')
-    if res.upper() == 'A':
-        do_everything = True
-    if res.upper() == 'Y' or do_everything:
-        (price_history, current_price_only) = download_data(companies_held['Code'], engine)
-        if not do_everything:
-            res = input('Type Y to commit the data to the local database\n')
-        if res.upper() == 'Y' or do_everything:
-            commit_data(price_history, 'price_history', engine, 'append')
-            commit_data(current_price_only, 'current_price_only', engine, 'replace')
 
-    res = ''
-    # Add in missing data, eg for delisted symbols. Only needed once. I don't need this anymore
-    # res = input('Type Q to upload the manual data into the database\n')
-    if res.upper() == 'Q':
-        try:
-            missing_data = pd.read_csv(file_missing_data_delisted)
-            missing_data = missing_data.set_index('Date')
-            manual_add_missing_data(missing_data, 'price_history', engine)
-        except:
-            print('Something went wrong trying to load in the manual data.')
-    
-    # pandas to_sql method does not currently support upsert behaviour.
-    # If this changes in the future, perhaps this flag can be used, to eliminate the problem of duplicate records.
-    # For now though, it's easy enough to just delete the duplicates after insertion.
-    print('duplicates are:')
-    duplicates = get_duplicate_records(engine, 'price_history')
-    print(duplicates)
-    if not do_everything:
-        res = input('Type Y to delete duplicate records\n')
-    if res.upper() == 'Y' or do_everything:
-        delete_duplicate_records(engine, 'price_history')
 
-    print('duplicates are:')
-    duplicates = get_duplicate_records(engine, 'price_history')
-    print(duplicates)
-    if not do_everything:
-        res = input('Type Y to export CSV files for PowerBI\n')
-    if res.upper() == 'Y' or do_everything:
-        # These output copies of the database to csv files, for use in PowerBI.
-        export_data_to_csv(output_file=file_price_history_output,
-                           table='price_history',
-                           engine=engine)
 
-        export_data_to_csv(output_file=file_current_price_output,
-                           table='current_price_only',
-                           engine=engine)
+    (price_history, price_current) = download_data(companies_held['Code'], db)
+
+
+    db.save_data(
+        df=price_history,
+        table_name='price_history',
+        if_exists='upsert',
+        unique_key=['date', 'ticker_code'],
+        auto_add_id=True
+        )
+    db.save_data(
+        df=price_current,
+        table_name='price_current',
+        if_exists='replace',
+        auto_add_id=True
+        )
+
+    # These output copies of the database to csv files, for use in PowerBI.
+    db.export_data_to_csv(
+        table='price_history',
+        output_file=output_file_price_history
+        )
+    db.export_data_to_csv(
+        table='price_current',
+        output_file=output_file_price_current
+        )
 
 
 if __name__ == '__main__':

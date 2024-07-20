@@ -1,3 +1,8 @@
+db_backups
+finance-database.db
+price-current.csv
+price-history.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
