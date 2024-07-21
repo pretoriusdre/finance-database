@@ -78,7 +78,7 @@ class FinanceDatabaseWrapper(SQLiteWrapper):
         today_date = date.today()
         last_backup_date = date.fromisoformat('2000-01-01')
         
-        backup_path = Path('db_backups') 
+        backup_path = Path(r'M:\Important\Tax+Money+Housing\Shares\Finance database backups') 
 
         for path in backup_path.glob('*.db'):
             backup_date = date.fromisoformat(path.name[:10])
@@ -208,8 +208,8 @@ def main():
     db = FinanceDatabaseWrapper()
 
 
-    # Must have a column called 'Code'
-    # Code must contain strings with a ticker matching Yahoo Finance, such as 'VGS.AX'
+    # Must have a column called 'ticker_code'
+    # ticker_code must contain strings with a ticker matching Yahoo Finance, such as 'VGS.AX'
     file_companies_held = 'companies-held.csv'
 
     # Files for manually loading in missing data, if applicable
@@ -231,7 +231,7 @@ def main():
 
 
 
-    (price_history, price_current) = download_data(companies_held['Code'], db)
+    (price_history, price_current) = download_data(companies_held['ticker_code'], db)
 
 
     db.save_data(
