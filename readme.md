@@ -10,5 +10,5 @@ Inputs (to run the script)
    
 Returns:
 * finance-database.db		An updated database.
-* output-current-price.csv	The current prices in csv format. Exported from the database.
-* output-price-history.csv	The price history in csv format. Exported from the database.
+* price_current.csv         The current prices in csv format. Exported from the database.
+* price-history             The price history in csv format. Exported from the database.

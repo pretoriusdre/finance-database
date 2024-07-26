@@ -2,11 +2,16 @@
 
 import sqlite3
 import os
-import time
 import string
-
+import uuid
 import numpy as np
 import pandas as pd
+
+from uuid7_draft import uuid7
+
+
+
+
 
 class SQLiteWrapper:
     """
@@ -133,7 +138,7 @@ class SQLiteWrapper:
 
         if auto_add_id:
             df = df.copy()
-            uuid_col = [self.__class__._get_uuid7() for _ in range(len(df))]
+            uuid_col = [str(uuid7()) for _ in range(len(df))]
             df.insert(0, 'id',  uuid_col)
 
         if if_exists == 'upsert':
@@ -356,74 +361,6 @@ class SQLiteWrapper:
         if raise_it:
             raise e
 
-    @classmethod
-    def _get_uuid7(cls, unix_ts_ms=None, rand_a=None, rand_b=None):
-
-        """A lightweight UUID7 implementation based on the draft UUIDv7 standard, retrieved 20 July 2024
-        
-        Refer to RFC 9562 at https://www.rfc-editor.org/rfc/rfc9562
-
-        Bit allocation:
-        0               1  <- Octets -> 2               3               4
-        0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |                           unix_ts_ms                          |  <- Octets 0,1,2,3
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |          unix_ts_ms           |  ver  |       rand_a          |  <- Octets 4,5,6,7
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |var|                        rand_b                             |  <- Octets 8,9,10,11
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |                            rand_b                             |  <- Octets 12,13,14,15
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-                                            Grand total = 16 octets x 8 bits/octet = 128 bits
-        
-        Note: The UUID7 implementation currently available on PyPi is not correct as it is using nanosecond time resolution.
-        https://pypi.org/project/uuid7/
-        https://github.com/stevesimmons/uuid7/issues/1
-        """
-        
-        # The current Unix timestamp in milliseconds
-        if not unix_ts_ms:
-            unix_ts_ms = time.time_ns() // 1000000
-        
-        # Random data
-        if not rand_a:
-            rand_a = int.from_bytes(os.urandom(2), byteorder='big') # 2 bytes = 16 bits of random data
-        if not rand_b:
-            rand_b = int.from_bytes(os.urandom(8), byteorder='big') # 8 bytes = 64 bits of random data
-        
-        # Fixed parameters for UUIDv7
-        ver = 7 # Binary value: 0b0111
-        var = 2 # Binary value: 0b10
-
-        # Mask all inputs with zeroes to ensure they are sufficiently long.
-        unix_ts_ms &= 0xFFFFFFFFFFFF  # 48 bits
-        ver &= 0xF  # 4 bits
-        rand_a &= 0xFFF  # 12 bits
-        var &= 0x3  # 2 bits
-        rand_b &= 0x3FFFFFFFFFFFFFFF # 62 bits
-
-        uuid_bytes = unix_ts_ms.to_bytes(6, byteorder='big') # 6 bytes = 48 bits
-        uuid_bytes += ((ver << 12) + rand_a).to_bytes(2, byteorder='big') # Total 2 bytes (16 bits). The 4 bit of ver is shifted by 12 bits to the start.
-        uuid_bytes += ((var << 62) + rand_b).to_bytes(8, byteorder='big') # Total 8 bytes (64 bits). The 2 bits of var is shifted by 62 bits to the start.
-
-        return f"{uuid_bytes[:4].hex()}-{uuid_bytes[4:6].hex()}-{uuid_bytes[6:8].hex()}-{uuid_bytes[8:10].hex()}-{uuid_bytes[10:].hex()}"
-    
-    @classmethod
-    def _test_uuid(cls): 
-        """This function is used to validate the test vector provided in the RFC documentation
-        https://www.ietf.org/rfc/rfc9562.html#name-example-of-a-uuidv7-value
-        """
-        test_vector = {
-            'unix_ts_ms':0x017F22E279B0,
-            'rand_a':0xCC3,
-            'rand_b': 0x18C4DC0C0C07398F
-        }
-        expected_output = '017F22E2-79B0-7CC3-98C4-DC0C0C07398F'.lower()
-        is_compliant = cls._get_uuid7(**test_vector) == expected_output
-        return is_compliant
 
 
-assert SQLiteWrapper._test_uuid()
 

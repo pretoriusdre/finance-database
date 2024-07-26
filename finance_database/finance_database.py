@@ -155,6 +155,10 @@ def download_data(companies_held, db):
         except Exception as e:
             print(e)
             print('    - Local database could not be read. Will try get all data')
+
+            res = input('Local database could not be read. Type "start" to get all data')
+            if res.upper() != 'START':
+                raise ValueError('Aborted')
             # No data? Then start getting data from 2000
             # I don't need data before this    
             next_date_to_dl = '2000-01-01'
