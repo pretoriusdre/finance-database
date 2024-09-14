@@ -3,6 +3,10 @@ finance-database.db
 price-current.csv
 price-history.csv
 
+
+personal.ipynb
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

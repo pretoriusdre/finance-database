@@ -1,5 +1,0 @@
-pandas~=1.3.5
-requests~=2.26.0
-yfinance~=0.1.67
-SQLAlchemy~=1.4.29
-lxml~=4.7.1
