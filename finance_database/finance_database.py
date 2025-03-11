@@ -30,8 +30,9 @@ class FinanceDatabaseWrapper(SQLiteWrapper):
             [low]           FLOAT,
             [close]         FLOAT,
             [volume]        BIGINT,
-            [dividends]     BIGINT,
-            [stock_splits]  BIGINT
+            [dividends]     FLOAT,
+            [stock_splits]  FLOAT,
+            [capital_gains] FLOAT
         );"""
         ,
         """
@@ -46,11 +47,12 @@ class FinanceDatabaseWrapper(SQLiteWrapper):
             [date]          DATE,
             [open]          FLOAT,
             [high]          FLOAT,
-            [low]           FLOAT,
+            [low]           FLOAT,  
             [close]         FLOAT,
             [volume]        BIGINT,
-            [dividends]     BIGINT,
-            [stock_splits]  BIGINT
+            [dividends]     FLOAT,
+            [stock_splits]  FLOAT,
+            [capital_gains] FLOAT
         );
         """
         ,
@@ -191,9 +193,11 @@ def download_data(companies_held, db):
     
     print(f'Total of {len(price_history)} history days retrieved across {codes_downloaded} codes')
     
+    print(price_current.columns)
+
     # <class 'pandas._libs.tslibs.timestamps.Timestamp'> causing problems
-    price_history['date'] = pd.to_datetime(price_history['date']).apply(lambda x: x.date().isoformat())
-    price_current['date'] = pd.to_datetime(price_current['date']).apply(lambda x: x.date().isoformat())
+    price_history['date'] = pd.to_datetime(price_history['date'], utc=True).apply(lambda x: x.date().isoformat())
+    price_current['date'] = pd.to_datetime(price_current['date'], utc=True).apply(lambda x: x.date().isoformat())
 
     return price_history, price_current
 
