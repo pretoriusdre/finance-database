@@ -1,20 +1,15 @@
-[tool.poetry]
+[project]
 name = "finance-database"
 version = "0.1.0"
-description = ""
-authors = ["Andre <pretorius.dre+github@gmail.com>"]
+description = "Add your description here"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.12"
-pandas = "^2.2.2"
-requests = "^2.32.3"
-yfinance = "^0.2.43"
-SQLAlchemy = "^2.0.34"
-ipykernel = "^6.29.5"
-openpyxl = "^3.1.5"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires-python = ">=3.13"
+dependencies = [
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.7",
+    "matplotlib>=3.10.3",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.0",
+    "sqlalchemy>=2.0.41",
+    "yfinance>=0.2.64",
+]
